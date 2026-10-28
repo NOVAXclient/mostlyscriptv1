@@ -1,10 +1,11 @@
 --========================================================
--- MOSTLY SCRIPT V1 | PANDA AUTH KEY SYSTEM
+-- MOSTLY SCRIPT V1 | PANDA AUTH + JOIN DISCORD
 --========================================================
 
 local Players = game:GetService("Players")
-local player = Players.LocalPlayer
+local GuiService = game:GetService("GuiService")
 
+local player = Players.LocalPlayer
 if not player then
     warn("[Mostly Auth] LocalPlayer unavailable.")
     return
@@ -12,12 +13,9 @@ end
 
 local playerGui = player:WaitForChild("PlayerGui")
 
--- Prevent duplicate auth windows from older versions
-local sessionToken = tostring(os.clock()) .. "_" ..
-    tostring(math.random(100000, 999999))
+local DISCORD_INVITE = "https://discord.gg/GWPrNZ7ZTc"
 
-playerGui:SetAttribute("MostlyAuthSession", sessionToken)
-
+-- Remove older auth windows
 for _, name in ipairs({
     "MostlyAuthUI",
     "PandaAuthWindow",
@@ -29,8 +27,18 @@ for _, name in ipairs({
     end
 end
 
+-- Prevent duplicate instances
+local sessionToken = tostring(os.clock()) .. "_" ..
+    tostring(math.random(100000, 999999))
+
+playerGui:SetAttribute("MostlyAuthSession", sessionToken)
+
+local function isCurrentSession()
+    return playerGui:GetAttribute("MostlyAuthSession") == sessionToken
+end
+
 --========================================================
--- CREATE UI
+-- UI
 --========================================================
 
 local gui = Instance.new("ScreenGui")
@@ -146,18 +154,23 @@ local function makeButton(name, text, position, color)
     return button
 end
 
+local BLUE = Color3.fromRGB(57, 125, 255)
+local GREEN = Color3.fromRGB(65, 220, 145)
+local RED = Color3.fromRGB(255, 90, 100)
+local MUTED = Color3.fromRGB(165, 175, 195)
+
 local checkButton = makeButton(
     "CheckKey",
     "CHECK KEY",
     UDim2.fromOffset(18, 124),
-    Color3.fromRGB(57, 125, 255)
+    BLUE
 )
 
-local getButton = makeButton(
-    "GetKey",
-    "GET KEY",
+local joinButton = makeButton(
+    "JoinDiscord",
+    "JOIN DC",
     UDim2.new(0.5, 6, 0, 124),
-    Color3.fromRGB(48, 56, 75)
+    Color3.fromRGB(88, 101, 242)
 )
 
 local status = makeLabel(
@@ -167,16 +180,7 @@ local status = makeLabel(
     UDim2.new(1, -30, 0, 40),
     11
 )
-status.TextColor3 = Color3.fromRGB(255, 195, 65)
-
-local BLUE = Color3.fromRGB(57, 125, 255)
-local GREEN = Color3.fromRGB(65, 220, 145)
-local RED = Color3.fromRGB(255, 90, 100)
-local MUTED = Color3.fromRGB(165, 175, 195)
-
-local function isCurrentSession()
-    return playerGui:GetAttribute("MostlyAuthSession") == sessionToken
-end
+status.TextColor3 = MUTED
 
 local function setStatus(message, color)
     if not gui.Parent or not isCurrentSession() then
@@ -187,14 +191,60 @@ local function setStatus(message, color)
     status.TextColor3 = color or MUTED
 end
 
-local PUSL
-local authReady = false
-local authorized = false
-local checking = false
+--========================================================
+-- JOIN DISCORD
+--========================================================
+
+joinButton.Activated:Connect(function()
+    if not isCurrentSession() then
+        return
+    end
+
+    -- Try an executor-provided URL opener first.
+    local opened = false
+
+    if type(openurl) == "function" then
+        opened = pcall(function()
+            openurl(DISCORD_INVITE)
+        end)
+    end
+
+    -- Try Roblox's browser API if the runtime allows it.
+    if not opened then
+        opened = pcall(function()
+            GuiService:OpenBrowserWindow(DISCORD_INVITE)
+        end)
+    end
+
+    if opened then
+        setStatus("Opening Discord invite...", GREEN)
+        return
+    end
+
+    -- Clipboard fallback.
+    if type(setclipboard) == "function" then
+        local copied = pcall(function()
+            setclipboard(DISCORD_INVITE)
+        end)
+
+        if copied then
+            setStatus("Invite copied! Paste it into Discord.", GREEN)
+            return
+        end
+    end
+
+    print("[Mostly] Discord invite:", DISCORD_INVITE)
+    setStatus("Invite: discord.gg/GWPrNZ7ZTc", MUTED)
+end)
 
 --========================================================
 -- LOAD PANDA AUTH
 --========================================================
+
+local PUSL
+local authReady = false
+local authorized = false
+local checking = false
 
 task.spawn(function()
     local loaded, library = pcall(function()
@@ -215,8 +265,8 @@ task.spawn(function()
 
     if type(library.configure) ~= "function"
         or type(library.validate) ~= "function" then
-        setStatus("Required Panda Auth functions are missing.", RED)
-        warn("[Panda Auth] Required functions are unavailable.")
+        setStatus("Panda Auth functions are unavailable.", RED)
+        warn("[Panda Auth] Required functions are missing.")
         return
     end
 
@@ -244,66 +294,11 @@ task.spawn(function()
 end)
 
 --========================================================
--- GET KEY
---========================================================
-
-getButton.Activated:Connect(function()
-    if not isCurrentSession() then
-        return
-    end
-
-    if not authReady or not PUSL then
-        setStatus("Please wait for authentication to load.", MUTED)
-        return
-    end
-
-    if type(PUSL.getKeyUrl) ~= "function" then
-        setStatus("Panda Auth key link function is unavailable.", RED)
-        return
-    end
-
-    setStatus("Retrieving key link...", MUTED)
-
-    local ok, url = pcall(function()
-        return PUSL.getKeyUrl()
-    end)
-
-    if not isCurrentSession() then
-        return
-    end
-
-    if not ok or type(url) ~= "string" or url == "" then
-        setStatus("Could not retrieve the key link.", RED)
-        warn("[Panda Auth] Could not retrieve key URL:", url)
-        return
-    end
-
-    local copied = false
-
-    if type(setclipboard) == "function" then
-        copied = pcall(function()
-            setclipboard(url)
-        end)
-    end
-
-    if copied then
-        setStatus("Key link copied! Open it to get your key.", GREEN)
-    else
-        print("[Panda Auth] Key URL:", url)
-        setStatus("Key link printed in the console.", MUTED)
-    end
-end)
-
---========================================================
 -- CHECK KEY
 --========================================================
 
 local function checkKey()
-    if not isCurrentSession() then
-        return
-    end
-
-    if checking or authorized then
+    if not isCurrentSession() or checking or authorized then
         return
     end
 
@@ -337,9 +332,7 @@ local function checkKey()
             and result.success == true then
 
             authorized = true
-
             setStatus("Key accepted! Loading script...", GREEN)
-            print("[Panda Auth] Key accepted.")
 
             task.wait(0.5)
 
@@ -351,10 +344,7 @@ local function checkKey()
             checkButton.Text = "CHECK KEY"
             checkButton.BackgroundColor3 = BLUE
 
-            setStatus(
-                "Invalid key or verification failed. Try again.",
-                RED
-            )
+            setStatus("Invalid key or verification failed.", RED)
 
             if not ok then
                 warn("[Panda Auth] Validation error:", result)
@@ -387,7 +377,7 @@ end
 
 --========================================================
 -- PASTE YOUR MAIN MOSTLY SCRIPT BELOW THIS LINE
--- Do not paste another Panda Auth UI here.
+-- Do not add another key system UI.
 --========================================================
 
 local Players = game:GetService("Players")
